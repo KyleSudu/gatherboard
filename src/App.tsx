@@ -1,20 +1,14 @@
 import { useEffect, useState } from "react";
 
-import { useAppDispatch, useAppSelector } from "./state";
-import { BoardCanvas, Toolbar } from "./components";
+import { BoardCanvas, PresenceBar, Toolbar } from "./components";
 import {
-  addNote,
-  changeNoteColor,
-  deleteNote,
-  redo,
   setViewport,
-  undo,
-  updateNoteText,
   type NoteColor,
   type Point,
   type StickyNote,
 } from "./domain/board";
-import { useBoardPersistence } from "./features/board";
+import { useBoardCollaboration, useBoardPersistence } from "./features/board";
+import { useAppDispatch, useAppSelector } from "./state";
 
 function makeNote(position: Point): StickyNote {
   return {
@@ -26,17 +20,25 @@ function makeNote(position: Point): StickyNote {
 }
 
 type AppProps = {
+  collaborationEnabled?: boolean;
   syncEnabled?: boolean;
 };
 
-export function App({ syncEnabled = true }: AppProps) {
+export function App({
+  collaborationEnabled = true,
+  syncEnabled = true,
+}: AppProps) {
   const dispatch = useAppDispatch();
-  const { present, past, future, viewport } = useAppSelector(
+  const { present, revision, title, viewport } = useAppSelector(
     (state) => state.board,
   );
   const [announcement, setAnnouncement] = useState("");
-  const { boardId, errorMessage, renameBoard, retry, status, title } =
-    useBoardPersistence(syncEnabled);
+  const load = useBoardPersistence(syncEnabled);
+  const collaboration = useBoardCollaboration({
+    boardId: load.boardId,
+    enabled: syncEnabled && collaborationEnabled,
+    ready: load.ready,
+  });
 
   useEffect(() => {
     function handleShortcut(event: globalThis.KeyboardEvent) {
@@ -44,17 +46,17 @@ export function App({ syncEnabled = true }: AppProps) {
       if (!commandKey || event.key.toLowerCase() !== "z") return;
       event.preventDefault();
       if (event.shiftKey) {
-        dispatch(redo());
+        collaboration.redo();
         setAnnouncement("Change redone");
       } else {
-        dispatch(undo());
+        collaboration.undo();
         setAnnouncement("Change undone");
       }
     }
 
     window.addEventListener("keydown", handleShortcut);
     return () => window.removeEventListener("keydown", handleShortcut);
-  }, [dispatch]);
+  }, [collaboration]);
 
   function createNote(position?: Point) {
     const fallbackPosition = {
@@ -65,37 +67,60 @@ export function App({ syncEnabled = true }: AppProps) {
         (110 - viewport.y) / viewport.zoom + present.notes.length * 18,
       ),
     };
-    dispatch(addNote(makeNote(position ?? fallbackPosition)));
+    collaboration.createNote(makeNote(position ?? fallbackPosition));
     setAnnouncement("New note added");
   }
 
   function changeColor(id: string, color: NoteColor) {
-    dispatch(changeNoteColor({ id, color }));
+    collaboration.changeColor(id, color);
     setAnnouncement(`Note color changed to ${color}`);
   }
+
+  const connectionStatus = !load.ready ? load.status : collaboration.status;
+  const statusLabel =
+    connectionStatus === "loading"
+      ? "Opening board"
+      : connectionStatus === "connecting"
+        ? "Connecting"
+        : connectionStatus === "reconnecting"
+          ? "Reconnecting"
+          : connectionStatus === "offline"
+            ? "Working offline"
+            : connectionStatus === "error"
+              ? "Sync interrupted"
+              : connectionStatus === "disabled"
+                ? "Local mode"
+                : "Live";
+  const errorMessage = load.errorMessage || collaboration.errorMessage;
+  const unavailable =
+    connectionStatus === "offline" || connectionStatus === "error";
 
   return (
     <main className="app-shell">
       <header className="app-header">
         <div className="brand">
-          <p className="eyebrow">A collaborative canvas, starting locally</p>
+          <p className="eyebrow">A multiplayer canvas for shared thinking</p>
           <h1>Gatherboard</h1>
         </div>
         <label className="title-control">
           <span className="visually-hidden">Board title</span>
           <input
-            value={title}
+            key={title}
+            defaultValue={title}
+            disabled={!load.ready}
             maxLength={80}
-            onChange={(event) => renameBoard(event.target.value)}
-            onBlur={() => {
-              if (!title.trim()) renameBoard("Untitled board");
+            onBlur={(event) => {
+              const nextTitle = event.target.value.trim() || "Untitled board";
+              event.target.value = nextTitle;
+              if (nextTitle !== title) collaboration.renameBoard(nextTitle);
             }}
           />
         </label>
         <div className="header-actions">
+          <PresenceBar participants={collaboration.participants} />
           <button
             type="button"
-            disabled={!boardId}
+            disabled={!load.boardId}
             onClick={async () => {
               await navigator.clipboard.writeText(window.location.href);
               setAnnouncement("Board link copied");
@@ -103,41 +128,42 @@ export function App({ syncEnabled = true }: AppProps) {
           >
             Share link
           </button>
-          <div className={`save-status save-status-${status}`} role="status">
-            <span aria-hidden="true">●</span>{" "}
-            {status === "loading"
-              ? "Opening board"
-              : status === "saving"
-                ? "Saving"
-                : status === "offline"
-                  ? "Saved locally"
-                  : status === "error"
-                    ? "Save failed"
-                    : "Saved"}
+          <div
+            className={`save-status save-status-${connectionStatus}`}
+            role="status"
+          >
+            <span aria-hidden="true">●</span> {statusLabel}
           </div>
         </div>
       </header>
 
-      {(status === "offline" || status === "error") && (
-        <aside className={`sync-message sync-message-${status}`}>
+      {unavailable && (
+        <aside className={`sync-message sync-message-${connectionStatus}`}>
           <span>{errorMessage}</span>
-          <button type="button" onClick={retry}>
+          <button
+            type="button"
+            onClick={() => {
+              load.retry();
+              collaboration.retry();
+            }}
+          >
             Retry
           </button>
         </aside>
       )}
 
       <Toolbar
-        canUndo={past.length > 0}
-        canRedo={future.length > 0}
+        canUndo={collaboration.canUndo}
+        canRedo={collaboration.canRedo}
+        disabled={!load.ready}
         zoom={viewport.zoom}
         onAddNote={() => createNote()}
         onUndo={() => {
-          dispatch(undo());
+          collaboration.undo();
           setAnnouncement("Change undone");
         }}
         onRedo={() => {
-          dispatch(redo());
+          collaboration.redo();
           setAnnouncement("Change redone");
         }}
         onPan={(x, y) =>
@@ -159,15 +185,19 @@ export function App({ syncEnabled = true }: AppProps) {
       <BoardCanvas
         notes={present.notes}
         viewport={viewport}
+        participants={collaboration.participants}
+        selfClientId={collaboration.clientId}
+        onCursorMove={collaboration.sendCursor}
+        onMoveNote={collaboration.moveNote}
         onAddAt={createNote}
         onAnnounce={setAnnouncement}
         onChangeColor={changeColor}
         onChangeText={(id, text) => {
-          dispatch(updateNoteText({ id, text }));
+          collaboration.changeText(id, text);
           setAnnouncement("Note text updated");
         }}
         onDelete={(note) => {
-          dispatch(deleteNote(note.id));
+          collaboration.deleteNote(note.id);
           setAnnouncement(`Deleted ${note.text || "empty note"}`);
         }}
       />
@@ -178,7 +208,8 @@ export function App({ syncEnabled = true }: AppProps) {
 
       <footer className="app-footer">
         <span>{present.notes.length} notes</span>
-        <span>Persistent boards v1</span>
+        <span>Revision {revision}</span>
+        <span>Live collaboration v2</span>
       </footer>
     </main>
   );

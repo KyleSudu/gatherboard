@@ -8,7 +8,6 @@ import {
 
 import { StickyNoteCard } from "../StickyNoteCard";
 import {
-  moveNote,
   screenToBoardCoordinates,
   setViewport,
   zoomViewportAtPoint,
@@ -18,6 +17,7 @@ import {
   type Viewport,
 } from "../../domain/board";
 import { useAppDispatch } from "../../state";
+import type { Participant } from "../../../shared";
 
 type DragState = {
   noteId: string;
@@ -41,6 +41,10 @@ type BoardCanvasProps = {
   onChangeColor: (id: string, color: NoteColor) => void;
   onChangeText: (id: string, text: string) => void;
   onDelete: (note: StickyNote) => void;
+  onMoveNote: (id: string, position: Point) => void;
+  onCursorMove: (position: Point | null) => void;
+  participants: Participant[];
+  selfClientId: string;
 };
 
 export function BoardCanvas({
@@ -51,6 +55,10 @@ export function BoardCanvas({
   onChangeColor,
   onChangeText,
   onDelete,
+  onMoveNote,
+  onCursorMove,
+  participants,
+  selfClientId,
 }: BoardCanvasProps) {
   const dispatch = useAppDispatch();
   const [drag, setDrag] = useState<DragState | null>(null);
@@ -67,6 +75,14 @@ export function BoardCanvas({
   }
 
   function handleBoardPointerMove(event: PointerEvent<HTMLDivElement>) {
+    const rect = event.currentTarget.getBoundingClientRect();
+    onCursorMove(
+      screenToBoardCoordinates(
+        { x: event.clientX, y: event.clientY },
+        rect,
+        viewport,
+      ),
+    );
     if (!pan || pan.pointerId !== event.pointerId) return;
     dispatch(
       setViewport({
@@ -123,7 +139,7 @@ export function BoardCanvas({
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
-    dispatch(moveNote({ id: drag.noteId, position: drag.currentPosition }));
+    onMoveNote(drag.noteId, drag.currentPosition);
     onAnnounce("Note moved");
     setDrag(null);
   }
@@ -211,6 +227,7 @@ export function BoardCanvas({
       onPointerMove={handleBoardPointerMove}
       onPointerUp={finishPan}
       onPointerCancel={finishPan}
+      onPointerLeave={() => onCursorMove(null)}
       onWheel={handleWheel}
     >
       <div
@@ -242,12 +259,33 @@ export function BoardCanvas({
               onDragMove={moveNoteDrag}
               onDragEnd={finishNoteDrag}
               onKeyboardMove={(nextPosition) => {
-                dispatch(moveNote({ id: note.id, position: nextPosition }));
+                onMoveNote(note.id, nextPosition);
                 onAnnounce("Note moved");
               }}
             />
           );
         })}
+        {participants
+          .filter(({ clientId, cursor }) => clientId !== selfClientId && cursor)
+          .map((participant) => (
+            <div
+              className="remote-cursor"
+              key={participant.clientId}
+              style={{
+                color: participant.color,
+                transform: `translate(${participant.cursor?.x ?? 0}px, ${participant.cursor?.y ?? 0}px)`,
+              }}
+              aria-hidden="true"
+            >
+              <span className="remote-cursor-pointer">◆</span>
+              <span
+                className="remote-cursor-label"
+                style={{ backgroundColor: participant.color }}
+              >
+                {participant.displayName}
+              </span>
+            </div>
+          ))}
       </div>
 
       <p className="canvas-hint" aria-hidden="true">

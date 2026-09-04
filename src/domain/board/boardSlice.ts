@@ -1,5 +1,6 @@
 import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
 
+import { applyBoardOperation, type BoardOperation } from "../../../shared";
 import type {
   BoardDocument,
   NoteColor,
@@ -31,6 +32,8 @@ export type BoardState = {
   past: BoardDocument[];
   future: BoardDocument[];
   viewport: Viewport;
+  title: string;
+  revision: number;
 };
 
 export const initialBoardState: BoardState = {
@@ -38,6 +41,8 @@ export const initialBoardState: BoardState = {
   past: [],
   future: [],
   viewport: { x: 0, y: 0, zoom: 1 },
+  title: "Untitled board",
+  revision: 0,
 };
 
 function copyDocument(document: BoardDocument): BoardDocument {
@@ -65,7 +70,20 @@ const boardSlice = createSlice({
         viewport: { ...action.payload.viewport },
         past: [],
         future: [],
+        title: action.payload.title ?? "Untitled board",
+        revision: action.payload.revision ?? 0,
       };
+    },
+    applyCollaborationOperation(state, action: PayloadAction<BoardOperation>) {
+      const applied = applyBoardOperation(
+        { title: state.title, document: state.present },
+        action.payload,
+      );
+      state.title = applied.title;
+      state.present = applied.document;
+    },
+    setRevision(state, action: PayloadAction<number>) {
+      state.revision = action.payload;
     },
     addNote(state, action: PayloadAction<StickyNote>) {
       rememberPresent(state);
@@ -139,6 +157,7 @@ const boardSlice = createSlice({
 });
 
 export const {
+  applyCollaborationOperation,
   addNote,
   changeNoteColor,
   deleteNote,
@@ -146,6 +165,7 @@ export const {
   moveNote,
   redo,
   setViewport,
+  setRevision,
   undo,
   updateNoteText,
 } = boardSlice.actions;

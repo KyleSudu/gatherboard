@@ -19,4 +19,5 @@ export type PersistedBoard = {
   document: BoardDocument;
   viewport: Viewport;
   title?: string;
+  revision?: number;
 };

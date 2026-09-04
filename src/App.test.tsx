@@ -99,7 +99,7 @@ describe("Gatherboard", () => {
     expect(
       board.present.notes.find(({ id }) => id === "welcome")?.position,
     ).toEqual({ x: 146, y: 126 });
-    expect(board.past).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "Undo" })).toBeEnabled();
   });
 
   it("hydrates a previously saved board", () => {
@@ -136,6 +136,7 @@ describe("Gatherboard", () => {
       viewport: store.getState().board.viewport,
       createdAt: "2026-09-04T12:00:00.000Z",
       updatedAt: "2026-09-04T12:00:00.000Z",
+      revision: 0,
     };
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify(board), {
@@ -148,7 +149,7 @@ describe("Gatherboard", () => {
     render(
       <StrictMode>
         <Provider store={store}>
-          <App />
+          <App collaborationEnabled={false} />
         </Provider>
       </StrictMode>,
     );
@@ -166,7 +167,7 @@ describe("Gatherboard", () => {
 
     render(
       <Provider store={store}>
-        <App />
+        <App collaborationEnabled={false} />
       </Provider>,
     );
 
@@ -198,11 +199,11 @@ describe("Gatherboard", () => {
 
     render(
       <Provider store={store}>
-        <App />
+        <App collaborationEnabled={false} />
       </Provider>,
     );
 
     expect(await screen.findByText("Board not found")).toBeInTheDocument();
-    expect(screen.getByText("Save failed")).toBeInTheDocument();
+    expect(screen.getByText("Sync interrupted")).toBeInTheDocument();
   });
 });

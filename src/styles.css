@@ -120,7 +120,8 @@ button:disabled {
 }
 
 .save-status-loading,
-.save-status-saving {
+.save-status-connecting,
+.save-status-reconnecting {
   color: #6d5015;
   background: #fff0c7;
 }
@@ -155,6 +156,38 @@ button:disabled {
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
+}
+
+.presence-bar,
+.presence-avatars {
+  display: flex;
+  align-items: center;
+}
+
+.presence-bar {
+  gap: 7px;
+  color: #5a536d;
+  font-size: 0.82rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.presence-avatars {
+  flex-direction: row-reverse;
+  justify-content: flex-end;
+}
+
+.presence-avatar {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  margin-right: -7px;
+  border: 2px solid white;
+  border-radius: 50%;
+  place-items: center;
+  color: white;
+  font-size: 0.58rem;
+  text-transform: uppercase;
 }
 
 .sync-message {
@@ -248,6 +281,34 @@ button:disabled {
 
 .note-layer {
   pointer-events: none;
+}
+
+.remote-cursor {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 20;
+  display: grid;
+  grid-template-columns: auto auto;
+  align-items: start;
+  pointer-events: none;
+}
+
+.remote-cursor-pointer {
+  font-size: 1.15rem;
+  filter: drop-shadow(0 1px 1px rgb(0 0 0 / 20%));
+  transform: rotate(-30deg);
+}
+
+.remote-cursor-label {
+  margin-top: 15px;
+  margin-left: -3px;
+  padding: 3px 6px;
+  border-radius: 5px;
+  color: white;
+  font-size: 0.68rem;
+  font-weight: 750;
+  white-space: nowrap;
 }
 
 .sticky-note {

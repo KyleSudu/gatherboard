@@ -23,8 +23,8 @@ export const store = createAppStore(loadPersistedBoard());
 
 if (typeof window !== "undefined") {
   store.subscribe(() => {
-    const { present, viewport } = store.getState().board;
-    savePersistedBoard({ document: present, viewport });
+    const { present, revision, title, viewport } = store.getState().board;
+    savePersistedBoard({ document: present, viewport, title, revision });
   });
 }
 
