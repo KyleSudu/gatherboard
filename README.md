@@ -43,6 +43,12 @@ npm run dev
 
 The development command starts both the web app and API. Open `http://127.0.0.1:4174`; the API listens on `http://127.0.0.1:4175`.
 
+## Deploy
+
+The production server hosts the built React app, REST API, and WebSocket endpoint from one origin. A Dockerfile and Render Blueprint are included. The Blueprint attaches a persistent disk at `/var/data` so SQLite boards survive restarts and deploys.
+
+Persistent disks require paid Render compute. Review the selected plan in the Render dashboard before creating the Blueprint instance.
+
 ## Quality checks
 
 ```bash

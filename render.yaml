@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: gatherboard
+    runtime: docker
+    plan: 0.5c-512mb
+    region: ohio
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    envVars:
+      - key: BOARD_DB_PATH
+        value: /var/data/gatherboard.db
+    disk:
+      name: gatherboard-data
+      mountPath: /var/data
+      sizeGB: 1
