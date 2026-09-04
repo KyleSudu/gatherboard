@@ -2,7 +2,9 @@ import { randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 
 import {
+  applyBoardOperation,
   boardRecordSchema,
+  type BoardOperation,
   type BoardRecord,
   type SaveBoardInput,
 } from "../../shared";
@@ -14,6 +16,7 @@ type BoardRow = {
   viewport_json: string;
   created_at: string;
   updated_at: string;
+  revision: number;
 };
 
 function rowToBoard(row: BoardRow): BoardRecord {
@@ -24,6 +27,7 @@ function rowToBoard(row: BoardRow): BoardRecord {
     viewport: JSON.parse(row.viewport_json),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    revision: row.revision,
   });
 }
 
@@ -44,6 +48,29 @@ export class BoardRepository {
         updated_at TEXT NOT NULL
       );
     `);
+    const columns = this.database
+      .prepare("PRAGMA table_info(boards)")
+      .all() as {
+      name: string;
+    }[];
+    if (!columns.some(({ name }) => name === "revision")) {
+      this.database.exec(
+        "ALTER TABLE boards ADD COLUMN revision INTEGER NOT NULL DEFAULT 0",
+      );
+    }
+    this.database.exec(`
+      CREATE TABLE IF NOT EXISTS board_operations (
+        operation_id TEXT PRIMARY KEY,
+        board_id TEXT NOT NULL,
+        client_id TEXT NOT NULL,
+        revision INTEGER NOT NULL,
+        operation_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (board_id) REFERENCES boards(id)
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS board_operations_board_revision
+      ON board_operations(board_id, revision);
+    `);
   }
 
   create(input: SaveBoardInput): BoardRecord {
@@ -53,13 +80,14 @@ export class BoardRepository {
       ...input,
       createdAt: now,
       updatedAt: now,
+      revision: 0,
     };
 
     this.database
       .prepare(
         `INSERT INTO boards
-          (id, title, document_json, viewport_json, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?)`,
+          (id, title, document_json, viewport_json, created_at, updated_at, revision)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         board.id,
@@ -68,6 +96,7 @@ export class BoardRepository {
         JSON.stringify(board.viewport),
         board.createdAt,
         board.updatedAt,
+        board.revision,
       );
 
     return board;
@@ -104,7 +133,83 @@ export class BoardRepository {
       ...input,
       createdAt: existing.createdAt,
       updatedAt,
+      revision: existing.revision,
     };
+  }
+
+  commitOperation(
+    operation: BoardOperation,
+  ): { board: BoardRecord; revision: number; duplicate: boolean } | undefined {
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      const previous = this.database
+        .prepare("SELECT revision FROM board_operations WHERE operation_id = ?")
+        .get(operation.operationId) as { revision: number } | undefined;
+      if (previous) {
+        const board = this.findById(operation.boardId);
+        this.database.exec("COMMIT");
+        return board
+          ? { board, revision: previous.revision, duplicate: true }
+          : undefined;
+      }
+
+      const existing = this.findById(operation.boardId);
+      if (!existing) {
+        this.database.exec("ROLLBACK");
+        return undefined;
+      }
+
+      const applied = applyBoardOperation(
+        { title: existing.title, document: existing.document },
+        operation,
+      );
+      const revision = existing.revision + 1;
+      const updatedAt = new Date().toISOString();
+
+      this.database
+        .prepare(
+          `INSERT INTO board_operations
+            (operation_id, board_id, client_id, revision, operation_json, created_at)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          operation.operationId,
+          operation.boardId,
+          operation.clientId,
+          revision,
+          JSON.stringify(operation),
+          updatedAt,
+        );
+      this.database
+        .prepare(
+          `UPDATE boards
+           SET title = ?, document_json = ?, updated_at = ?, revision = ?
+           WHERE id = ?`,
+        )
+        .run(
+          applied.title,
+          JSON.stringify(applied.document),
+          updatedAt,
+          revision,
+          operation.boardId,
+        );
+      this.database.exec("COMMIT");
+
+      return {
+        board: {
+          ...existing,
+          title: applied.title,
+          document: applied.document,
+          updatedAt,
+          revision,
+        },
+        revision,
+        duplicate: false,
+      };
+    } catch (error) {
+      this.database.exec("ROLLBACK");
+      throw error;
+    }
   }
 
   close() {

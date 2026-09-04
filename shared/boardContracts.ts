@@ -32,6 +32,7 @@ export const saveBoardInputSchema = z.object({
 
 export const boardRecordSchema = saveBoardInputSchema.extend({
   id: z.string().uuid(),
+  revision: z.number().int().nonnegative(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });
