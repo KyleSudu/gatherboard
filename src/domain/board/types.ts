@@ -1,30 +1,22 @@
-export const noteColors = ["yellow", "pink", "blue", "green"] as const;
+import type {
+  BoardDocument,
+  NoteColor,
+  Point,
+  StickyNote,
+  Viewport,
+} from "../../../shared";
 
-export type NoteColor = (typeof noteColors)[number];
+export const noteColors = [
+  "yellow",
+  "pink",
+  "blue",
+  "green",
+] as const satisfies readonly NoteColor[];
 
-export type Point = {
-  x: number;
-  y: number;
-};
-
-export type StickyNote = {
-  id: string;
-  text: string;
-  color: NoteColor;
-  position: Point;
-};
-
-export type BoardDocument = {
-  notes: StickyNote[];
-};
-
-export type Viewport = {
-  x: number;
-  y: number;
-  zoom: number;
-};
+export type { BoardDocument, NoteColor, Point, StickyNote, Viewport };
 
 export type PersistedBoard = {
   document: BoardDocument;
   viewport: Viewport;
+  title?: string;
 };
