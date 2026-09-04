@@ -1,6 +1,6 @@
 # Gatherboard: project and learning plan
 
-**Current status:** v1 complete — September 4, 2026
+**Current status:** v2 complete — September 4, 2026
 
 ## Why this project exists
 
@@ -37,13 +37,15 @@ The first version is complete when a user can:
 
 V1 uses a Fastify API, shared Zod contracts, and Node's built-in SQLite driver. A new visit creates one board and replaces the URL with `/boards/:id`. Opening that URL later loads the same snapshot from SQLite. Client changes are kept locally immediately and sent to the API after a short debounce.
 
-### v2: multiplayer collaboration
+### v2: multiplayer collaboration — complete
 
 - Synchronize board operations through WebSockets.
 - Show participant presence and live cursors.
 - Apply optimistic local updates.
 - Reconnect and recover after temporary network loss.
 - Define and test a conflict-resolution policy.
+
+V2 keeps REST for creating and initially loading boards, then opens a WebSocket for the active editing session. Each durable user intent is a small validated operation. The server commits operations in arrival order, assigns a monotonically increasing revision, stores the resulting snapshot and operation atomically, and broadcasts the committed event to the room.
 
 ### v3: portfolio release
 
@@ -69,9 +71,9 @@ flowchart LR
     Validation --> Repository[Board repository]
     Repository --> SQLite[(SQLite)]
 
-    Store -. v2 .-> Socket[WebSocket client]
-    Socket -. v2 .-> Server[Collaboration server]
-    Server -. v2 .-> Database[(Database)]
+    Store --> Socket[WebSocket client]
+    Socket --> Server[Collaboration room]
+    Server --> Database[(SQLite snapshot + operations)]
 ```
 
 The app deliberately separates document state from view state:
@@ -157,6 +159,29 @@ sequenceDiagram
     API-->>Sync: Saved BoardRecord
 ```
 
+## V2 live operation flow
+
+```mermaid
+sequenceDiagram
+    participant A as Browser A
+    participant Server as WebSocket room
+    participant DB as SQLite transaction
+    participant B as Browser B
+
+    A->>A: Apply note.textChanged optimistically
+    A->>Server: operation(operationId, clientId, payload)
+    Server->>DB: Apply operation + increment revision
+    DB-->>Server: Commit revision 12
+    Server-->>A: operation.committed(revision 12)
+    Server-->>B: operation.committed(revision 12)
+    A->>A: Remove operation from pending queue
+    B->>B: Apply operation to local document
+```
+
+The conflict policy is intentionally understandable: the server establishes a total order, and the last committed operation affecting a field wins. Operation IDs make retries idempotent. A client applies its own work immediately, then uses server revisions to detect gaps. When a remote event arrives while local work is pending, the client applies the remote event and replays pending local operations so the optimistic view still reflects its unacknowledged intent.
+
+Presence and cursors are ephemeral. They travel through the room but are not written to SQLite or included in undo history.
+
 ## Accessibility decisions
 
 - Every action has a visible button or native form control.
@@ -196,21 +221,21 @@ These areas are worth rewriting in a small sandbox without copying the implement
 2. `boardReducer` — the boundary between document state, view state, and undo history is an architectural decision.
 3. The pointer drag lifecycle in `BoardCanvas` — transient preview state should become one committed domain action.
 4. Keyboard movement in `StickyNoteCard` — accessible input should reach the same domain operation as pointer input.
-5. The future WebSocket operation contract — multiplayer behavior will depend on the commands being explicit and serializable.
+5. The WebSocket operation contract — multiplayer behavior depends on commands being explicit, serializable, and safe to retry.
 
 For each one, the learning check is: explain the data entering the function, the transformation being performed, the invariant it protects, and one edge case.
 
 ## Suggested working sessions
 
-The detailed reconstruction exercises are in [LEARNING_SESSIONS.md](./LEARNING_SESSIONS.md). Complete the v0 and v1 sessions before starting multiplayer work.
+The detailed reconstruction exercises are in [LEARNING_SESSIONS.md](./LEARNING_SESSIONS.md). The guide now includes a second pass dedicated to reconstructing multiplayer v2.
 
-After that:
+After reconstructing v2:
 
-1. Design a serializable WebSocket operation contract.
-2. Synchronize note creation between two windows.
-3. Generalize synchronization to every board operation.
-4. Add presence, reconnection, and conflict tests.
-5. Deploy, record a demo, and write the project article.
+1. Deploy the client, API, and durable database.
+2. Add authenticated participant identities and authorization.
+3. Persist the offline queue across a full page reload.
+4. Evaluate a CRDT when field-level last-write-wins is no longer sufficient.
+5. Record a demo and write the project article.
 
 ## Interview story
 
@@ -259,6 +284,28 @@ TypeScript types disappear at runtime, so the API cannot trust a request merely 
 
 V1 persists complete board snapshots because they are easy to reason about and sufficient for a single editor. Multiplayer v2 will introduce operations because broadcasting entire snapshots would create unnecessary conflicts and traffic.
 
+### Use REST and WebSockets together
+
+REST remains a good fit for create/load request-response work. A WebSocket is used only while a board is open because both the browser and server need to send events at arbitrary times.
+
+### Let the server assign revision order
+
+Client timestamps cannot establish a trustworthy global order. SQLite transactions serialize accepted operations, and the server assigns the next board revision. A missing revision tells a client to reconnect and request a fresh snapshot.
+
+### Make undo another operation
+
+Rewinding a shared global snapshot would erase other participants' work. V2 undo sends an inverse of the local user's last operation, so it participates in the same ordering and broadcast rules as every other edit.
+
 ### Reuse the initial request in React Strict Mode
 
 React intentionally replays effects during development. The synchronization hook keeps one in-flight creation promise so the replay observes the same result instead of creating an orphan board.
+
+## v2 completion record
+
+- Shared Zod schemas validate every client and server WebSocket message.
+- REST still creates and loads boards; live edits use WebSocket operations.
+- SQLite stores the updated snapshot and operation revision in one transaction.
+- Local edits are optimistic and pending edits replay after sync or reconnection.
+- Participant presence and cursors update across a room without being persisted.
+- Undo and redo emit compensating operations rather than rewinding shared state.
+- Unit, component, API, and real two-client WebSocket integration tests pass.

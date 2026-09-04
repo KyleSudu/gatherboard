@@ -131,7 +131,7 @@ Write a Cypress test that begins at `/`, waits for a generated board URL, rename
 
 **Check:** Identify which behaviors are already covered by faster unit tests and which confidence only the browser test provides.
 
-## Before starting multiplayer v2
+## Before reconstructing multiplayer v2
 
 You are ready when you can explain these without opening the code:
 
@@ -159,3 +159,108 @@ type BoardOperation = {
 ```
 
 Do not add WebSockets until you can describe how duplicate, delayed, and out-of-order operations should behave.
+
+## Session 11: Design the operation protocol
+
+**Goal:** Turn user intent into data that can cross a process boundary.
+
+Without looking at the finished schema, define operations for creating, moving, editing, recoloring, and deleting a note, plus renaming a board. Give every operation an `operationId`, `boardId`, `clientId`, and `clientSequence`. Validate the union with Zod.
+
+**Write this yourself:** The discriminated union in `shared/collaborationContracts.ts`.
+
+**Check:** Explain why `note.moved` is safer to retry than a command such as `note.moveBy(10, 0)`.
+
+## Session 12: Build the pure operation reducer
+
+**Goal:** Share one definition of an operation between browser and server.
+
+Start from `applyBoardOperation.test.ts`. Implement a pure function that receives a title/document snapshot and one operation. Make duplicate note creation and changes to missing notes harmless.
+
+**Write this yourself:** `applyBoardOperation`; this is compact, high-value domain logic.
+
+**Check:** Explain why the same pure function can run inside a Redux reducer and inside a SQLite repository.
+
+## Session 13: Commit revisions transactionally
+
+**Goal:** Understand the server's ordering guarantee.
+
+Add `revision` to each board and an operation table keyed by `operationId`. In one SQLite transaction: check for a duplicate, load the board, apply the operation, store the operation, update the snapshot, and increment the revision.
+
+**Write this yourself:** First write pseudocode, then implement `commitOperation` without copying it.
+
+**Check:** Describe the broken state possible if the operation row commits but the updated snapshot does not.
+
+## Session 14: Build a WebSocket room
+
+**Goal:** Learn why live collaboration needs a long-lived two-way connection.
+
+Create a route for `/api/boards/:id/live`. On connection, send the current snapshot. When a valid operation arrives, commit it and broadcast the committed revision to every socket in that board's room.
+
+**Write this yourself:** The room map, connection cleanup, and broadcast helper.
+
+**Check:** Contrast this with REST: who is allowed to initiate the next message, and when does the connection end?
+
+## Session 15: Add optimistic updates and acknowledgements
+
+**Goal:** Make latency invisible without pretending the network cannot fail.
+
+When a local command occurs, apply it immediately, add it to a pending map, and send it. Remove it only when the server echoes its committed operation. On initial sync, apply the server snapshot and then replay pending operations.
+
+**Write this yourself:** A tiny version supporting only `note.created` before generalizing it.
+
+**Check:** Explain why the server echoes an operation to its author instead of broadcasting only to everyone else.
+
+## Session 16: Handle ordering and reconciliation
+
+**Goal:** Reason about concurrent changes explicitly.
+
+Give each committed operation a server revision. Accept only the next revision; reconnect when there is a gap. After applying a remote operation, replay any still-pending local operations.
+
+Work through both orders on paper:
+
+```text
+A edits locally → B commits → A commits
+A edits locally → A commits → B commits
+```
+
+**Check:** State the current policy precisely: server arrival order, with the last committed operation for a field winning. Explain when this policy would no longer be good enough.
+
+## Session 17: Reconnect and replay
+
+**Goal:** Recover from a temporary connection failure without duplicating work.
+
+Keep pending operations in memory, reconnect with exponential backoff, receive a fresh snapshot, replay pending operations locally, and resend them. Confirm that resending the same `operationId` does not increment the revision twice.
+
+**Write this yourself:** The reconnect state machine on paper before writing hooks.
+
+**Check:** Identify the remaining limitation: closing or reloading the tab loses the in-memory queue. Persisting it is a future enhancement.
+
+## Session 18: Add ephemeral presence
+
+**Goal:** Separate durable collaboration state from awareness state.
+
+Broadcast participants on join/leave and cursor coordinates while connected. Throttle cursor messages. Never persist them, put them in Redux document history, or announce each movement to a screen reader.
+
+**Write this yourself:** The cursor throttling function and cleanup path.
+
+**Check:** Explain why losing a cursor message is acceptable while losing a note edit is not.
+
+## Session 19: Rebuild collaborative undo
+
+**Goal:** Understand why shared undo is a new action, not time travel.
+
+Before each local operation, capture enough prior state to construct its inverse. Undo by sending that inverse as a new operation. Redo constructs another new operation.
+
+**Write this yourself:** `inverseFor`, then test delete/restore and move/restore.
+
+**Check:** Explain why replacing the board with an old snapshot could erase another user's work.
+
+## Session 20: Prove two-client behavior
+
+**Goal:** Test the property that makes v2 different from v1.
+
+Start a real server on an ephemeral port, create a board, connect two WebSocket clients, and send one operation. Assert that both clients receive revision 1 and SQLite contains the result. Retry the same operation and assert the revision stays 1.
+
+Then manually open one board URL in two windows and verify edits, presence, cursors, reconnect, and undo.
+
+**Check:** Explain what this integration test proves that a reducer unit test cannot.

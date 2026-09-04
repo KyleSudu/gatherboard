@@ -2,7 +2,7 @@
 
 Gatherboard is a keyboard-accessible visual workspace for arranging sticky notes. It is a focused learning project inspired by collaborative whiteboards, built in releases so the spatial interaction model is proven before real-time collaboration is added.
 
-**Status:** v1 complete. Live collaboration is planned for the next release.
+**Status:** v2 complete. Open the same board URL in two windows to collaborate live.
 
 ## v0 features
 
@@ -23,6 +23,16 @@ Gatherboard is a keyboard-accessible visual workspace for arranging sticky notes
 - Debounced autosave with visible loading and saving states
 - Offline local fallback and retry behavior
 - Protection against duplicate board creation during React Strict Mode
+
+## v2 features
+
+- Operation-based synchronization over WebSockets
+- Optimistic edits that appear before a server round trip
+- Server-assigned revisions and duplicate-operation protection
+- Automatic reconnection with in-memory replay of unsent operations
+- Participant presence and throttled live cursors
+- Collaborative undo and redo implemented as new inverse operations
+- A two-client integration test for ordered broadcast and deduplication
 
 ## Run locally
 
