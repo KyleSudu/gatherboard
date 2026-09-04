@@ -1,6 +1,6 @@
 # Gatherboard: project and learning plan
 
-**Current status:** v0 complete — September 4, 2026
+**Current status:** v1 complete — September 4, 2026
 
 ## Why this project exists
 
@@ -27,13 +27,15 @@ The first version is complete when a user can:
 - Use the experience with reduced-motion preferences.
 - Run unit, component, and end-to-end tests locally.
 
-### v1: persistent boards
+### v1: persistent boards — complete
 
 - Create named boards with shareable URLs.
 - Load and save through a Node API.
 - Persist board data in SQLite or Postgres.
 - Show explicit loading, saved, offline, and error states.
 - Add schema validation at the client/server boundary.
+
+V1 uses a Fastify API, shared Zod contracts, and Node's built-in SQLite driver. A new visit creates one board and replaces the URL with `/boards/:id`. Opening that URL later loads the same snapshot from SQLite. Client changes are kept locally immediately and sent to the API after a short debounce.
 
 ### v2: multiplayer collaboration
 
@@ -61,12 +63,18 @@ flowchart LR
     Store --> View[Rendered notes and viewport]
     Store --> Local[(localStorage)]
 
+    Store --> Sync[Persistence hook]
+    Sync --> API[Fastify board API]
+    API --> Validation[Shared Zod schemas]
+    Validation --> Repository[Board repository]
+    Repository --> SQLite[(SQLite)]
+
     Store -. v2 .-> Socket[WebSocket client]
     Socket -. v2 .-> Server[Collaboration server]
     Server -. v2 .-> Database[(Database)]
 ```
 
-The v0 app deliberately separates document state from view state:
+The app deliberately separates document state from view state:
 
 - **Document state** is the collection of sticky notes. It belongs in undo history and is persisted.
 - **View state** is the current pan and zoom. It changes frequently, does not pollute undo history, and is persisted independently.
@@ -116,6 +124,39 @@ sequenceDiagram
 
 Keeping pointer-move previews transient prevents a single drag from generating dozens of undo entries.
 
+## V1 save and restore flow
+
+```mermaid
+sequenceDiagram
+    participant Browser
+    participant Sync as useBoardPersistence
+    participant API as Fastify API
+    participant Schema as Zod contract
+    participant Repo as BoardRepository
+    participant DB as SQLite
+
+    Browser->>Sync: Open / or /boards/:id
+    alt New board
+        Sync->>API: POST /api/boards
+        API->>Schema: Validate snapshot
+        Schema->>Repo: Valid SaveBoardInput
+        Repo->>DB: INSERT board
+        API-->>Sync: BoardRecord
+        Sync->>Browser: replaceState(/boards/:id)
+    else Existing board
+        Sync->>API: GET /api/boards/:id
+        Repo->>DB: SELECT board
+        API-->>Sync: BoardRecord
+    end
+    Sync->>Browser: Hydrate Redux state
+    Browser->>Sync: Note or viewport changes
+    Sync->>Browser: Save local fallback immediately
+    Sync->>API: PUT /api/boards/:id after debounce
+    API->>Schema: Validate update
+    Repo->>DB: UPDATE board
+    API-->>Sync: Saved BoardRecord
+```
+
 ## Accessibility decisions
 
 - Every action has a visible button or native form control.
@@ -159,15 +200,17 @@ These areas are worth rewriting in a small sandbox without copying the implement
 
 For each one, the learning check is: explain the data entering the function, the transformation being performed, the invariant it protects, and one edge case.
 
-## Suggested working sessions after v0
+## Suggested working sessions
 
-1. Review v0 by tracing create, drag, persist, reload, and undo flows.
-2. Design the board API and persistence schema.
-3. Replace local-only loading with optimistic API-backed loading.
-4. Learn WebSockets by synchronizing note creation between two windows.
-5. Generalize synchronization to all board operations.
-6. Add presence, reconnection, and conflict tests.
-7. Deploy, record a demo, and write the project article.
+The detailed reconstruction exercises are in [LEARNING_SESSIONS.md](./LEARNING_SESSIONS.md). Complete the v0 and v1 sessions before starting multiplayer work.
+
+After that:
+
+1. Design a serializable WebSocket operation contract.
+2. Synchronize note creation between two windows.
+3. Generalize synchronization to every board operation.
+4. Add presence, reconnection, and conflict tests.
+5. Deploy, record a demo, and write the project article.
 
 ## Interview story
 
@@ -175,19 +218,20 @@ The useful story is not “I built a FigJam clone.” It is:
 
 > I modeled a visual workspace as durable document state, independent viewport state, and transient interactions. That separation made undo history predictable, keyboard and pointer input converge on the same operations, and created a clean path toward real-time synchronization.
 
-## v0 completion record
+## v1 completion record
 
-The completed release includes every v0 acceptance criterion. Verification at completion:
+The completed release retains every v0 capability and adds the full persistent-board milestone. Verification at completion:
 
 - TypeScript production build passed.
 - ESLint passed with zero warnings.
 - Prettier check passed.
-- Ten unit and component tests passed.
+- Sixteen unit, component, synchronization, repository, and API tests passed.
 - The Cypress happy-path test passed in headless Chrome.
-- Visual review confirmed the desktop layout and native focusable controls.
+- The browser journey created a named board, updated it, and restored the same snapshot from SQLite by URL.
+- Visual review confirmed the persistent-board layout and native focusable controls.
 - Browser console review found no runtime errors.
 
-The next learning session should start with a code walkthrough rather than a new feature. Trace one note from pointer or keyboard input, through its Redux action, into undo history and local storage. Then reimplement `screenToBoardCoordinates` from the tests alone.
+The next learning session should start with a code walkthrough rather than a new feature. Trace one note from pointer or keyboard input, through its Redux action and local fallback, across the HTTP boundary, and into SQLite. Then reimplement `screenToBoardCoordinates` from the tests alone.
 
 ## Decision log
 
@@ -206,3 +250,15 @@ Pointer movement can fire many times per second. Keeping that preview local avoi
 ### Persist locally before introducing a backend
 
 This proves the product interaction independently of distributed-systems concerns. The local persistence adapter can later be replaced while keeping board actions stable.
+
+### Share schemas across the HTTP boundary
+
+TypeScript types disappear at runtime, so the API cannot trust a request merely because the client compiled. Zod validates the actual JSON received by the server and also validates responses before the client hydrates Redux.
+
+### Store snapshots before operations
+
+V1 persists complete board snapshots because they are easy to reason about and sufficient for a single editor. Multiplayer v2 will introduce operations because broadcasting entire snapshots would create unnecessary conflicts and traffic.
+
+### Reuse the initial request in React Strict Mode
+
+React intentionally replays effects during development. The synchronization hook keeps one in-flight creation promise so the replay observes the same result instead of creating an orphan board.
