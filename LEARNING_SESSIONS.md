@@ -245,6 +245,8 @@ Broadcast participants on join/leave and cursor coordinates while connected. Thr
 
 **Check:** Explain why losing a cursor message is acceptable while losing a note edit is not.
 
+Give each mounted page its own participant ID and retain it only for that page's lifetime. Avoid `sessionStorage` for this identity: browsers can copy its contents when a tab is duplicated, causing two open pages to appear as one participant.
+
 ## Session 19: Rebuild collaborative undo
 
 **Goal:** Understand why shared undo is a new action, not time travel.

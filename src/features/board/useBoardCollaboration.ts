@@ -26,10 +26,7 @@ export type CollaborationStatus =
   "disabled" | "connecting" | "live" | "reconnecting" | "offline" | "error";
 
 function getClientIdentity() {
-  const storedId = window.sessionStorage.getItem("gatherboard:client-id");
-  const clientId = storedId ?? crypto.randomUUID();
-  if (!storedId)
-    window.sessionStorage.setItem("gatherboard:client-id", clientId);
+  const clientId = crypto.randomUUID();
   return {
     clientId,
     displayName: `Guest ${clientId.slice(0, 4).toUpperCase()}`,

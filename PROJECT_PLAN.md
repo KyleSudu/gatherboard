@@ -181,6 +181,7 @@ sequenceDiagram
 The conflict policy is intentionally understandable: the server establishes a total order, and the last committed operation affecting a field wins. Operation IDs make retries idempotent. A client applies its own work immediately, then uses server revisions to detect gaps. When a remote event arrives while local work is pending, the client applies the remote event and replays pending local operations so the optimistic view still reflects its unacknowledged intent.
 
 Presence and cursors are ephemeral. They travel through the room but are not written to SQLite or included in undo history.
+Each mounted page creates its own participant ID. Keeping it in React state makes it stable across WebSocket reconnections while ensuring duplicated tabs still appear as distinct collaborators.
 
 ## Accessibility decisions
 
