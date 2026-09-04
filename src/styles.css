@@ -81,8 +81,15 @@ button:disabled {
 }
 
 .app-header {
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: auto minmax(180px, 420px) auto;
+  justify-content: stretch;
+  gap: 18px;
   padding: 0 4px;
+}
+
+.brand {
+  min-width: max-content;
 }
 
 .app-header h1 {
@@ -110,6 +117,57 @@ button:disabled {
   background: #ddf5e8;
   font-size: 0.88rem;
   font-weight: 700;
+}
+
+.save-status-loading,
+.save-status-saving {
+  color: #6d5015;
+  background: #fff0c7;
+}
+
+.save-status-offline,
+.save-status-error {
+  color: #8a3631;
+  background: #ffe0dd;
+}
+
+.title-control input {
+  width: 100%;
+  min-height: 44px;
+  padding: 7px 12px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  color: #2a2540;
+  background: transparent;
+  font-size: 1.05rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.title-control input:hover,
+.title-control input:focus {
+  border-color: #d7d4e3;
+  background: white;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.sync-message {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 1px solid #edb8b2;
+  border-radius: 12px;
+  color: #6f302b;
+  background: #fff0ee;
+  font-size: 0.9rem;
 }
 
 .save-status span {
@@ -337,6 +395,19 @@ button:disabled {
   .eyebrow,
   .pan-controls,
   .canvas-hint {
+    display: none;
+  }
+
+  .app-header {
+    grid-template-columns: 1fr auto;
+  }
+
+  .title-control {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .header-actions .save-status {
     display: none;
   }
 

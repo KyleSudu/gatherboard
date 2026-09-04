@@ -14,6 +14,7 @@ import {
   type Point,
   type StickyNote,
 } from "./domain/board";
+import { useBoardPersistence } from "./features/board";
 
 function makeNote(position: Point): StickyNote {
   return {
@@ -24,12 +25,18 @@ function makeNote(position: Point): StickyNote {
   };
 }
 
-export function App() {
+type AppProps = {
+  syncEnabled?: boolean;
+};
+
+export function App({ syncEnabled = true }: AppProps) {
   const dispatch = useAppDispatch();
   const { present, past, future, viewport } = useAppSelector(
     (state) => state.board,
   );
   const [announcement, setAnnouncement] = useState("");
+  const { boardId, errorMessage, renameBoard, retry, status, title } =
+    useBoardPersistence(syncEnabled);
 
   useEffect(() => {
     function handleShortcut(event: globalThis.KeyboardEvent) {
@@ -70,14 +77,55 @@ export function App() {
   return (
     <main className="app-shell">
       <header className="app-header">
-        <div>
+        <div className="brand">
           <p className="eyebrow">A collaborative canvas, starting locally</p>
           <h1>Gatherboard</h1>
         </div>
-        <div className="save-status" role="status">
-          <span aria-hidden="true">●</span> Saved locally
+        <label className="title-control">
+          <span className="visually-hidden">Board title</span>
+          <input
+            value={title}
+            maxLength={80}
+            onChange={(event) => renameBoard(event.target.value)}
+            onBlur={() => {
+              if (!title.trim()) renameBoard("Untitled board");
+            }}
+          />
+        </label>
+        <div className="header-actions">
+          <button
+            type="button"
+            disabled={!boardId}
+            onClick={async () => {
+              await navigator.clipboard.writeText(window.location.href);
+              setAnnouncement("Board link copied");
+            }}
+          >
+            Share link
+          </button>
+          <div className={`save-status save-status-${status}`} role="status">
+            <span aria-hidden="true">●</span>{" "}
+            {status === "loading"
+              ? "Opening board"
+              : status === "saving"
+                ? "Saving"
+                : status === "offline"
+                  ? "Saved locally"
+                  : status === "error"
+                    ? "Save failed"
+                    : "Saved"}
+          </div>
         </div>
       </header>
+
+      {(status === "offline" || status === "error") && (
+        <aside className={`sync-message sync-message-${status}`}>
+          <span>{errorMessage}</span>
+          <button type="button" onClick={retry}>
+            Retry
+          </button>
+        </aside>
+      )}
 
       <Toolbar
         canUndo={past.length > 0}
@@ -130,7 +178,7 @@ export function App() {
 
       <footer className="app-footer">
         <span>{present.notes.length} notes</span>
-        <span>Local-first v0</span>
+        <span>Persistent boards v1</span>
       </footer>
     </main>
   );

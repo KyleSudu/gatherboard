@@ -3,16 +3,24 @@ import {
   fireEvent,
   render,
   screen,
+  waitFor,
   within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { StrictMode } from "react";
 import { Provider } from "react-redux";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
-import { createAppStore } from "./state";
+import { createAppStore, setLocalBoardId } from "./state";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+  window.localStorage.clear();
+  setLocalBoardId("draft");
+  window.history.replaceState({}, "", "/");
+});
 
 function renderApp() {
   const store = createAppStore();
@@ -21,7 +29,7 @@ function renderApp() {
     user: userEvent.setup(),
     ...render(
       <Provider store={store}>
-        <App />
+        <App syncEnabled={false} />
       </Provider>,
     ),
   };
@@ -111,11 +119,90 @@ describe("Gatherboard", () => {
 
     render(
       <Provider store={store}>
-        <App />
+        <App syncEnabled={false} />
       </Provider>,
     );
 
     expect(screen.getByDisplayValue("Loaded from storage")).toBeInTheDocument();
     expect(screen.getByLabelText("Current zoom")).toHaveTextContent("120%");
+  });
+
+  it("creates only one board when Strict Mode replays effects", async () => {
+    const store = createAppStore();
+    const board = {
+      id: "1b2dcdf3-7c07-4dc2-8818-318e46cb42cd",
+      title: "Server board",
+      document: store.getState().board.present,
+      viewport: store.getState().board.viewport,
+      createdAt: "2026-09-04T12:00:00.000Z",
+      updatedAt: "2026-09-04T12:00:00.000Z",
+    };
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(board), {
+        status: 201,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <StrictMode>
+        <Provider store={store}>
+          <App />
+        </Provider>
+      </StrictMode>,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByLabelText("Board title")).toHaveValue("Server board"),
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(window.location.pathname).toBe(`/boards/${board.id}`);
+  });
+
+  it("keeps the local board usable when the server is offline", async () => {
+    const store = createAppStore();
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Offline")));
+
+    render(
+      <Provider store={store}>
+        <App />
+      </Provider>,
+    );
+
+    expect(
+      await screen.findByText(
+        /server is unavailable.*local board is still usable/i,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeEnabled();
+    expect(screen.getByTestId("note-welcome")).toBeInTheDocument();
+  });
+
+  it("shows an error when a shared board does not exist", async () => {
+    window.history.replaceState(
+      {},
+      "",
+      "/boards/1b2dcdf3-7c07-4dc2-8818-318e46cb42cd",
+    );
+    const store = createAppStore();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ error: "Board not found" }), {
+          status: 404,
+          headers: { "content-type": "application/json" },
+        }),
+      ),
+    );
+
+    render(
+      <Provider store={store}>
+        <App />
+      </Provider>,
+    );
+
+    expect(await screen.findByText("Board not found")).toBeInTheDocument();
+    expect(screen.getByText("Save failed")).toBeInTheDocument();
   });
 });
